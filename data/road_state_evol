@@ -1,0 +1,4 @@
+idx    Rock   Water  Clean
+Rock   0      0      1
+Water  0.05   0.3    0.65
+Clean  0.05   0.05   0.9
