@@ -21,8 +21,8 @@ class simulator:
 
     def simulate_road(self):
 
-        road = np.empty(self._l, dtype=object)
-        road[0] = "Clean"
+        road = np.empty(self._l, dtype=int)
+        road[0] = 2
 
         for i in range(1, self._l):
             p = self._road_dynamics.loc[ road[i-1] ]
@@ -32,8 +32,8 @@ class simulator:
 
     def simulate_driver_state(self, road):
 
-        driver = np.empty(self._l, dtype=object)
-        driver[0] = "Aware"
+        driver = np.empty(self._l, dtype=int)
+        driver[0] = 0
 
         for i in range(1, self._l):
             p = self._driver_dynamics.loc[ (driver[i-1], road[i]) ]
