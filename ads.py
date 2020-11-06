@@ -19,7 +19,7 @@ class ADS:
         # Init ads
         self.current_cell = 0 ## Current cell
         self.next_cell = self.road[self.current_cell + 1] ## I see CONTENT of next cell
-        self.mode = "AUTON" ## Start with auton
+        # self.mode = "AUTON" ## Start with auton
 
         # ODD and ENV variables
         self.Dir = np.ones([3,3])
@@ -31,7 +31,8 @@ class ADS:
         self.char = char
         self.prior_driver_state = np.array([0.9, 0.1]) ## For every possible initial road state
         ## This is p(driver_state | char, road state)
-        self.prob_driver_state = self.normalize(self.driver_char[str(self.char[0])].values * self.prior_driver_state)
+        self.prob_driver_state = self.normalize(self.driver_char[str(self.char[0])].values \
+            * self.prior_driver_state)
 
         ## Relevant parameters
         self.env_states = self.driver_state_evol.index.unique("Obstacle").values
@@ -44,8 +45,8 @@ class ADS:
 
         # Warnings
         self.driver_state_threshold = 0.8
-        self.env_state_threshold_rock = 0.2
-        self.env_state_threshold_puddle = 0.4
+        self.env_state_threshold_rock = 0.1
+        self.env_state_threshold_puddle = 0.2
         ##
         self.rock_warnings = np.zeros(self.N) + 100
         self.puddle_warnings = np.zeros(self.N) + 100
@@ -66,7 +67,7 @@ class ADS:
         self.state_warnings[self.current_cell] = s
 
         # Decisions made and modes
-        self.modes = np.array(["AUTON"]*self.N)
+        self.modes = a = np.array(['AUTON' for _ in range(self.N)], dtype=object)
         self.decision_auton = np.zeros(self.N) + 100
         self.decision_manual = np.zeros(self.N) + 100
         self.decision_manual_aware = np.zeros(self.N) + 100
@@ -76,6 +77,10 @@ class ADS:
         self.decision_manual_aware[self.current_cell] = self.trajectory_planning("MANUAL_AWARE")[0]
         self.decision_manual_dist[self.current_cell] = self.trajectory_planning("MANUAL_DIST")[0]
         self.decision_manual[self.current_cell] = self.decision_manual_aware[self.current_cell]
+
+        # Counters
+        self.RtI = 0
+        self.emergency = 0
 
         ##
     def move(self):
@@ -87,7 +92,8 @@ class ADS:
         ## Update driver state knowledge
         aux = self.driver_state_evol.xs(self.next_cell, level="Obstacle").values.T
         aux = np.dot(aux, self.prob_driver_state.T)
-        self.prob_driver_state = self.normalize(self.driver_char[str(self.char[self.current_cell+1])].values * aux)
+        self.prob_driver_state = self.normalize(self.driver_char\
+            [str(self.char[self.current_cell+1])].values * aux)
 
         self.current_cell += 1
         self.next_cell = self.road[self.current_cell + 1] 
@@ -127,8 +133,17 @@ class ADS:
             self.decision_manual[self.current_cell] = \
                 self.decision_manual_dist[self.current_cell -1]
 
-        # if warning evaluate driving modes
-                  
+        if self.modes[self.current_cell] == "AUTON":
+            self.eval_RtI()
+
+        else:
+            self.counter_manual += 1 
+            if self.prob_driver_state[1] > 0.5 or self.counter_manual >= 10:
+                self.modes[self.current_cell + 1] = "AUTON"
+            else:
+                self.modes[self.current_cell + 1] = "MANUAL"
+            
+
 
 
     def trajectory_planning(self, mode):
@@ -270,6 +285,23 @@ class ADS:
             eut_manual_dist += self.compute_cell_utility("MANUAL_DIS", self.env_pred[i,:], self.traj_plan_manual_dist[i] )
 
         return eut_auton, self.prob_driver_state[0] * eut_manual_aware + self.prob_driver_state[1] * eut_manual_dist
+
+    def eval_RtI(self):
+        if self.rock_warnings[self.current_cell] == 1 or self.puddle_warnings[self.current_cell] == 1:
+            eut_auton, eut_manual = self.evaluate_driving_modes()
+            if eut_manual > eut_auton:
+                self.RtI += 1
+                if self.prob_driver_state[1] > 0.9:
+                    self.emergency +=1
+                else:
+                    self.counter_manual = 0
+                    if self.driver[self.current_cell] == 1: 
+                        self.modes[self.current_cell + 1] = "MANUAL"
+                    else:
+                        self.modes[self.current_cell + 3] = "MANUAL"
+
+                    if self.prob_driver_state[1] > 0.5:
+                        self.state_warnings[self.current_cell] += 1
 
 
 
