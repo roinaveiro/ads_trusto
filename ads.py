@@ -29,10 +29,12 @@ class ADS:
         self.driver_char = driver_char 
         self.driver_state_evol = driver_state_evol
         self.char = char
+        self.prob_driver_state_arr = np.zeros(self.N)
         self.prior_driver_state = np.array([0.9, 0.1]) ## For every possible initial road state
         ## This is p(driver_state | char, road state)
         self.prob_driver_state = self.normalize(self.driver_char[str(self.char[0])].values \
             * self.prior_driver_state)
+        self.prob_driver_state_arr[0] = self.prob_driver_state[1]
 
         ## Relevant parameters
         self.env_states = self.driver_state_evol.index.unique("Obstacle").values
@@ -67,7 +69,7 @@ class ADS:
         self.state_warnings[self.current_cell] = s
 
         # Decisions made and modes
-        self.modes = a = np.array(['AUTON' for _ in range(self.N)], dtype=object)
+        self.modes = np.array(['AUTON' for _ in range(self.N)], dtype=object)
         self.decision_auton = np.zeros(self.N) + 100
         self.decision_manual = np.zeros(self.N) + 100
         self.decision_manual_aware = np.zeros(self.N) + 100
@@ -80,6 +82,7 @@ class ADS:
 
         # Counters
         self.RtI = 0
+        self.prop_RtI = 0
         self.emergency = 0
 
         ##
@@ -97,6 +100,7 @@ class ADS:
 
         self.current_cell += 1
         self.next_cell = self.road[self.current_cell + 1] 
+        self.prob_driver_state_arr[self.current_cell] = self.prob_driver_state[1]
 
         ## Forecasts - Driver state
         state_pred = self.predict_driver_state()
@@ -280,14 +284,17 @@ class ADS:
         eut_manual_dist = 0
 
         for i in range(5):
+
             eut_auton += self.compute_cell_utility("AUTON", self.env_pred[i,:], self.traj_plan_auton[i] )
             eut_manual_aware += self.compute_cell_utility("MANUAL_AWARE", self.env_pred[i,:], self.traj_plan_manual_aware[i] )
             eut_manual_dist += self.compute_cell_utility("MANUAL_DIS", self.env_pred[i,:], self.traj_plan_manual_dist[i] )
+
 
         return eut_auton, self.prob_driver_state[0] * eut_manual_aware + self.prob_driver_state[1] * eut_manual_dist
 
     def eval_RtI(self):
         if self.rock_warnings[self.current_cell] == 1 or self.puddle_warnings[self.current_cell] == 1:
+            self.prop_RtI += 1
             eut_auton, eut_manual = self.evaluate_driving_modes()
             if eut_manual > eut_auton:
                 self.RtI += 1
@@ -306,8 +313,27 @@ class ADS:
 
 
     def complete_road(self):
-        for i in range(self.N-5):
+        for i in range(self.N-6):
             self.move()
+
+    def get_info(self):
+
+        info = {}
+        info["prop_manual"] = np.sum(self.modes[:self.N-5] == "MANUAL") / (self.N-5)
+        info["n_RtI"] = self.RtI
+        info["n_emergency"] = self.emergency
+        info["prop_rejected_RtI"] = (self.prop_RtI - self.RtI) / self.prop_RtI
+        condition = self.modes == "MANUAL"
+        info["avg_len_man"] = np.mean( np.diff(np.where(np.concatenate(([condition[0]],
+                                     condition[:-1] != condition[1:],
+                                     [True])))[0])[::2] )
+                                    
+        info["state_warnings"] = np.sum(self.state_warnings[:self.N-5] != 0)
+        info["rock_warnings"] = np.sum(self.rock_warnings == 1)
+        info["puddle_warnings"] = np.sum(self.puddle_warnings == 1)
+
+        return info
+        
 
     @staticmethod
     def normalize(arr):
@@ -322,7 +348,7 @@ class ADS:
         TODO_
      
      
-        '''
+    '''
 
 
 
