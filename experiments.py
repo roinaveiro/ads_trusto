@@ -24,4 +24,4 @@ for i in range(N_sim):
     results.append(ads.get_info())
 
 df = pd.DataFrame(results)
-df.to_csv("results/sim1.csv", index=False)
+df.to_csv("results/sim2.csv", index=False)

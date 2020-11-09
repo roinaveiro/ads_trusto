@@ -46,9 +46,9 @@ class ADS:
         self.u_d = {0:0.0, 1:0.1, 2:0.2, 3:0.3, 4:0.5}
 
         # Warnings
-        self.driver_state_threshold = 0.8
-        self.env_state_threshold_rock = 0.1
-        self.env_state_threshold_puddle = 0.2
+        self.driver_state_threshold = 0.85
+        self.env_state_threshold_rock = 0.15
+        self.env_state_threshold_puddle = 0.25
         ##
         self.rock_warnings = np.zeros(self.N) + 100
         self.puddle_warnings = np.zeros(self.N) + 100
@@ -80,10 +80,18 @@ class ADS:
         self.decision_manual_dist[self.current_cell] = self.trajectory_planning("MANUAL_DIST")[0]
         self.decision_manual[self.current_cell] = self.decision_manual_aware[self.current_cell]
 
+        # Utilities attained
+        self.utilities = np.zeros(self.N)
+        self.utilities[self.current_cell] = self.compute_cell_utility('AUTON', 
+            self.decision_auton[self.current_cell])
+
         # Counters
         self.RtI = 0
         self.prop_RtI = 0
         self.emergency = 0
+        self.crashes = 0
+        self.skids = 0
+
 
         ##
     def move(self):
@@ -98,6 +106,7 @@ class ADS:
         self.prob_driver_state = self.normalize(self.driver_char\
             [str(self.char[self.current_cell+1])].values * aux)
 
+        # Move 
         self.current_cell += 1
         self.next_cell = self.road[self.current_cell + 1] 
         self.prob_driver_state_arr[self.current_cell] = self.prob_driver_state[1]
@@ -139,15 +148,20 @@ class ADS:
 
         if self.modes[self.current_cell] == "AUTON":
             self.eval_RtI()
+            self.utilities[self.current_cell] = self.compute_cell_utility('AUTON', 
+                self.decision_auton[self.current_cell])
 
         else:
+
+            self.utilities[self.current_cell] = self.compute_cell_utility('MANUAL', 
+                self.decision_manual[self.current_cell])
+
             self.counter_manual += 1 
-            if self.prob_driver_state[1] > 0.5 or self.counter_manual >= 10:
+            if self.prob_driver_state[1] > 0.75 or self.counter_manual >= 10:
                 self.modes[self.current_cell + 1] = "AUTON"
             else:
                 self.modes[self.current_cell + 1] = "MANUAL"
             
-
 
 
     def trajectory_planning(self, mode):
@@ -265,14 +279,88 @@ class ADS:
 
         return int(w_state), int(w_rock), int(w_puddle)
 
+    def compute_cell_utility(self, mode, d):
 
-    def compute_cell_utility(self, mode, env_pred, d):
+        if mode == "AUTON":
+
+            if self.road[self.current_cell] == 0: #If rock
+                if d!=0:
+                    self.crashes += 1
+                    ut_obstacle = -100 
+                else:
+                    ut_obstacle = 0
+
+            elif self.road[self.current_cell] == 1: #If puddle
+
+                if d != 3:
+                    ut_obstacle = 0
+                else:
+                    if np.random.random() < 0.95: # Skid!!
+                        self.skids += 1
+                        ut_obstacle = -10
+                    else:
+                        ut_obstacle = 0           
+
+            else:
+                ut_obstacle = 0
+
+            ut = 0.1 + self.u_d[d] + ut_obstacle
+            
+        else:
+
+            if self.road[self.current_cell] == 0: #If rock
+                if d!=0:
+                    self.crashes += 1
+                    ut_obstacle = -100 
+                else:
+                    ut_obstacle = 0
+
+            elif self.road[self.current_cell] == 1: #If puddle
+
+                if d == 2:
+
+                    if np.random.random() < 0.5: # Skid!!
+                        self.skids += 1
+                        ut_obstacle = -10
+                    else:
+                        ut_obstacle = 0
+
+                elif d==3:
+
+                    if np.random.random() < 0.80: # Skid!!
+                        self.skids += 1
+                        ut_obstacle = -10
+                    else:
+                        ut_obstacle = 0
+
+                elif d==4:
+
+                    if np.random.random() < 0.85: # Skid!!
+                        self.skids += 1
+                        ut_obstacle = -10
+                    else:
+                        ut_obstacle = 0
+
+                else:
+                    ut_obstacle = 0
+                               
+                        
+            else:
+                ut_obstacle = 0.0
+
+            ut = self.u_d[d] + ut_obstacle
+
+        return ut
+
+
+    def compute_cell_exp_utility(self, mode, env_pred, d):
 
         if mode == "AUTON":
             eut = 0.1 + self.u_d[d] + env_pred[1] * (-10*0.95 if d==3 else 0) + \
                 env_pred[0] * (-100 if d!=0 else 0)
         else:
-            eut = self.u_d[d] + env_pred[1] * (-10*0.95 if d==3 else 0) + \
+            eut = self.u_d[d] + env_pred[1] * -10 * \
+                (0.5 if d==2 else 0.8 if d==3 else 0.85 if d==4 else 0) + \
                 env_pred[0] * (-100 if d!=0 else 0)
 
         return eut
@@ -285,9 +373,9 @@ class ADS:
 
         for i in range(5):
 
-            eut_auton += self.compute_cell_utility("AUTON", self.env_pred[i,:], self.traj_plan_auton[i] )
-            eut_manual_aware += self.compute_cell_utility("MANUAL_AWARE", self.env_pred[i,:], self.traj_plan_manual_aware[i] )
-            eut_manual_dist += self.compute_cell_utility("MANUAL_DIS", self.env_pred[i,:], self.traj_plan_manual_dist[i] )
+            eut_auton += self.compute_cell_exp_utility("AUTON", self.env_pred[i,:], self.traj_plan_auton[i] )
+            eut_manual_aware += self.compute_cell_exp_utility("MANUAL_AWARE", self.env_pred[i,:], self.traj_plan_manual_aware[i] )
+            eut_manual_dist += self.compute_cell_exp_utility("MANUAL_DIS", self.env_pred[i,:], self.traj_plan_manual_dist[i] )
 
 
         return eut_auton, self.prob_driver_state[0] * eut_manual_aware + self.prob_driver_state[1] * eut_manual_dist
@@ -298,7 +386,7 @@ class ADS:
             eut_auton, eut_manual = self.evaluate_driving_modes()
             if eut_manual > eut_auton:
                 self.RtI += 1
-                if self.prob_driver_state[1] > 0.9:
+                if self.prob_driver_state[1] > 0.95:
                     self.emergency +=1
                 else:
                     self.counter_manual = 0
@@ -331,6 +419,9 @@ class ADS:
         info["state_warnings"] = np.sum(self.state_warnings[:self.N-5] != 0)
         info["rock_warnings"] = np.sum(self.rock_warnings == 1)
         info["puddle_warnings"] = np.sum(self.puddle_warnings == 1)
+        info["crashes"] = self.crashes
+        info["skids"] = self.skids
+        info["utility"] = np.mean(self.utilities[:self.N-5])
 
         return info
         
