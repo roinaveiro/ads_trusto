@@ -63,11 +63,9 @@ class ADS:
         env_pred = self.predict_env()
         self.env_pred = np.vstack(list(env_pred.values()))
 
-        s,r,p = self.issue_warnings()
-        self.rock_warnings[self.current_cell] = r
-        self.puddle_warnings[self.current_cell] = p
-        self.state_warnings[self.current_cell] = s
-
+        ## Issue warnings
+        self.issue_warnings()
+        
         # Decisions made and modes
         self.modes = np.array(['AUTON' for _ in range(self.N)], dtype=object)
         self.decision_auton = np.zeros(self.N) + 100
@@ -96,20 +94,13 @@ class ADS:
         ##
     def move(self):
 
-        ## Update environment knowledge
-        observed_cell = self.road[self.current_cell + 2]
-        self.Dir[observed_cell, self.next_cell] += 1
-
-        ## Update driver state knowledge
-        aux = self.driver_state_evol.xs(self.next_cell, level="Obstacle").values.T
-        aux = np.dot(aux, self.prob_driver_state.T)
-        self.prob_driver_state = self.normalize(self.driver_char\
-            [str(self.char[self.current_cell+1])].values * aux)
+        # Update
+        self.update()
 
         # Move 
         self.current_cell += 1
         self.next_cell = self.road[self.current_cell + 1] 
-        self.prob_driver_state_arr[self.current_cell] = self.prob_driver_state[1]
+        
 
         ## Forecasts - Driver state
         state_pred = self.predict_driver_state()
@@ -120,32 +111,12 @@ class ADS:
         self.env_pred = np.vstack(list(env_pred.values()))
 
         # Issue warnings
-        s,r,p = self.issue_warnings()
-        self.rock_warnings[self.current_cell] = r
-        self.puddle_warnings[self.current_cell] = p
-        self.state_warnings[self.current_cell] = s
+        self.issue_warnings()
 
-        # Make speed decisions and trajectory planning
-        traj_auton = self.trajectory_planning("AUTON")
-        traj_manual_aware = self.trajectory_planning("MANUAL_AWARE")
-        traj_manual_dist = self.trajectory_planning("MANUAL_DIST")
+        # Make decisions
+        self.decide()
 
-        self.traj_plan_auton = traj_auton[1:]
-        self.traj_plan_manual_aware = traj_manual_aware[1:]
-        self.traj_plan_manual_dist = traj_manual_dist[1:]
-
-        self.decision_auton[self.current_cell] = traj_auton[0]
-        self.decision_manual_aware[self.current_cell] = traj_manual_aware[0]
-        self.decision_manual_dist[self.current_cell] = traj_manual_dist[0]
-
-        if self.driver[self.current_cell - 1] == 0:
-            self.decision_manual[self.current_cell] = \
-                self.decision_manual_aware[self.current_cell] * (1-self.driver[self.current_cell]) \
-                    + self.decision_manual_aware[self.current_cell-1] * self.driver[self.current_cell]
-        else:
-            self.decision_manual[self.current_cell] = \
-                self.decision_manual_dist[self.current_cell -1]
-
+        # Evaluate driving modes
         if self.modes[self.current_cell] == "AUTON":
             self.eval_RtI()
             self.utilities[self.current_cell] = self.compute_cell_utility('AUTON', 
@@ -162,6 +133,18 @@ class ADS:
             else:
                 self.modes[self.current_cell + 1] = "MANUAL"
             
+
+    def update(self):
+
+        ## Update environment knowledge
+        observed_cell = self.road[self.current_cell + 2]
+        self.Dir[observed_cell, self.next_cell] += 1
+
+        ## Update driver state knowledge
+        aux = self.driver_state_evol.xs(self.next_cell, level="Obstacle").values.T
+        aux = np.dot(aux, self.prob_driver_state.T)
+        self.prob_driver_state = self.normalize(self.driver_char\
+            [str(self.char[self.current_cell+1])].values * aux)
 
 
     def trajectory_planning(self, mode):
@@ -186,8 +169,30 @@ class ADS:
                 
             return np.vectorize(self.v_manual.get)(env_pred)
 
-            
-            
+    def decide(self):
+
+        # Make speed decisions and trajectory planning
+        traj_auton = self.trajectory_planning("AUTON")
+        traj_manual_aware = self.trajectory_planning("MANUAL_AWARE")
+        traj_manual_dist = self.trajectory_planning("MANUAL_DIST")
+
+        self.traj_plan_auton = traj_auton[1:]
+        self.traj_plan_manual_aware = traj_manual_aware[1:]
+        self.traj_plan_manual_dist = traj_manual_dist[1:]
+
+        self.decision_auton[self.current_cell] = traj_auton[0]
+        self.decision_manual_aware[self.current_cell] = traj_manual_aware[0]
+        self.decision_manual_dist[self.current_cell] = traj_manual_dist[0]
+
+        if self.driver[self.current_cell - 1] == 0:
+            self.decision_manual[self.current_cell] = \
+                self.decision_manual_aware[self.current_cell] * (1-self.driver[self.current_cell]) \
+                    + self.decision_manual_aware[self.current_cell-1] * self.driver[self.current_cell]
+        else:
+            self.decision_manual[self.current_cell] = \
+                self.decision_manual_dist[self.current_cell -1]
+
+              
 
     def predict_driver_state(self):
 
@@ -269,15 +274,14 @@ class ADS:
     def issue_warnings(self):
 
         ## Driver state warnings
-        w_state = np.any(self.state_pred[:,1] > self.driver_state_threshold)
+        self.state_warnings[self.current_cell] = np.any(self.state_pred[:,1] > self.driver_state_threshold)
 
         ## Env state warning Rock
-        w_rock = np.any(self.env_pred[3:,0] > self.env_state_threshold_rock)
+        self.rock_warnings[self.current_cell] = np.any(self.env_pred[3:,0] > self.env_state_threshold_rock)
 
         ## Env state warning Puddle
-        w_puddle = np.any(self.env_pred[1:,1] > self.env_state_threshold_puddle)
+        self.puddle_warnings[self.current_cell] = np.any(self.env_pred[1:,1] > self.env_state_threshold_puddle)
 
-        return int(w_state), int(w_rock), int(w_puddle)
 
     def compute_cell_utility(self, mode, d):
 
@@ -381,6 +385,7 @@ class ADS:
         return eut_auton, self.prob_driver_state[0] * eut_manual_aware + self.prob_driver_state[1] * eut_manual_dist
 
     def eval_RtI(self):
+
         if self.rock_warnings[self.current_cell] == 1 or self.puddle_warnings[self.current_cell] == 1:
             self.prop_RtI += 1
             eut_auton, eut_manual = self.evaluate_driving_modes()
@@ -403,6 +408,8 @@ class ADS:
     def complete_road(self):
         for i in range(self.N-6):
             self.move()
+            ## Save relevant info
+            self.prob_driver_state_arr[self.current_cell] = self.prob_driver_state[1]
 
     def get_info(self):
 
@@ -433,13 +440,6 @@ class ADS:
     @staticmethod
     def normalize_arr(arr):
         return arr / np.sum(arr, axis=0)
-
-
-    '''
-        TODO_
-     
-     
-    '''
 
 
 
