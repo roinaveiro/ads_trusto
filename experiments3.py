@@ -19,7 +19,7 @@ for i in range(N_sim):
     print(i)
     for j, pr in enumerate(grid):
 
-        road_dynamics.loc[2][0] = pr
+        road_dynamics.loc[2][1] = pr
         road_dynamics.loc[2][2] = 1.0 - (road_dynamics.loc[2][0] + road_dynamics.loc[2][1]) 
 
         sim = simulator(1000, [road_dynamics, driver_dynamics, driver_char])
@@ -32,10 +32,10 @@ for i in range(N_sim):
         ads.complete_road()
         dirr = ads.get_info()
         dirr['n_exp'] = i
-        dirr['pr_rock'] = pr
+        dirr['pr_puddle'] = pr
         results.append(dirr)
  
 
 df = pd.DataFrame(results)
-df.to_csv("results/sim3_prop_rock_1000.csv", index=False)
+df.to_csv("results/sim3_prop_puddle_1000.csv", index=False)
 
