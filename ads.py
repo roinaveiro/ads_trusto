@@ -29,16 +29,17 @@ class ADS:
         self.driver_char = driver_char 
         self.driver_state_evol = driver_state_evol
         self.char = char
-        self.prob_driver_state_arr = np.zeros(self.N)
         self.prior_driver_state = np.array([0.9, 0.1]) ## For every possible initial road state
         ## This is p(driver_state | char, road state)
         self.prob_driver_state = self.normalize(self.driver_char[str(self.char[0])].values \
             * self.prior_driver_state)
-        self.prob_driver_state_arr[0] = self.prob_driver_state[1]
 
         ## Relevant parameters
         self.env_states = self.driver_state_evol.index.unique("Obstacle").values
         self.driver_states = self.driver_state_evol.index.unique("Current").values
+
+        self.content_current_cell = np.zeros(len(self.env_states))
+        self.content_current_cell[ self.road[self.current_cell] ] = 1.0
 
         # Trajectory planning and utilities
         self.v_auton  = {0:0, 1:2, 2:3} # Obstacle: velocity (AUTON mode)
@@ -99,6 +100,8 @@ class ADS:
 
         # Move 
         self.current_cell += 1
+        self.content_current_cell = np.zeros(len(self.env_states))
+        self.content_current_cell[ self.road[self.current_cell] ] = 1.0
         self.next_cell = self.road[self.current_cell + 1] 
         
 
@@ -149,10 +152,21 @@ class ADS:
 
     def trajectory_planning(self, mode):
 
-        if mode == "AUTON":
+        if mode == "AUTON": 
             max_env_pred = np.argmax(self.env_pred, axis=1)
             trajectory = np.vectorize(self.v_auton.get)(max_env_pred)
             return np.append(self.v_auton[self.road[self.current_cell]], trajectory)
+            '''
+            trajectory = np.zeros(5)
+            for j in range(5):
+                aux = [ self.compute_cell_exp_utility("AUTON", self.env_pred[j,:], i) for i in [0,1,2,3] ]
+                trajectory[j] = np.argmax(np.array(aux))
+
+            current_decision = np.argmax(np.array([self.compute_cell_exp_utility("AUTON", \
+                    self.content_current_cell, i) for i in [0,1,2,3]]))
+
+            return np.append(current_decision, trajectory)
+            '''
 
         elif mode == "MANUAL_AWARE":
             env_pred = self.road[self.current_cell:self.current_cell+6]
@@ -408,8 +422,6 @@ class ADS:
     def complete_road(self):
         for i in range(self.N-6):
             self.move()
-            ## Save relevant info
-            self.prob_driver_state_arr[self.current_cell] = self.prob_driver_state[1]
 
     def get_info(self):
 

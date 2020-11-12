@@ -9,15 +9,22 @@ class simulator:
         l (int): road lenght
     """
 
-    def __init__(self, l):
+    def __init__(self, l, dynamics=None):
         self._l = l
         ##
-        self._road_dynamics = pd.read_csv("data/road_state_evol", index_col=0, delim_whitespace=True)
-        ##
-        self._driver_dynamics = pd.read_csv("data/driver_state_evol", delim_whitespace=True)
-        self._driver_dynamics.set_index(["Current", "Obstacle"], inplace=True)
-        ##
-        self._driver_char = pd.read_csv("data/driver_char", index_col=0, delim_whitespace=True)
+        if dynamics is None:
+            self._road_dynamics = pd.read_csv("data/road_state_evol", index_col=0, delim_whitespace=True)
+            ##
+            self._driver_dynamics = pd.read_csv("data/driver_state_evol", delim_whitespace=True)
+            self._driver_dynamics.set_index(["Current", "Obstacle"], inplace=True)
+            ##
+            self._driver_char = pd.read_csv("data/driver_char", index_col=0, delim_whitespace=True)
+        else:
+            self._road_dynamics = dynamics[0]
+            ##
+            self._driver_dynamics = dynamics[1]
+            ##
+            self._driver_char = dynamics[2]
 
     def simulate_road(self):
 
