@@ -3,7 +3,7 @@ import pandas as pd
 from simulator import simulator
 from ads import ADS
 
-N_sim = 10
+N_sim = 1000
 results = []
 
 for i in range(N_sim):
@@ -24,4 +24,4 @@ for i in range(N_sim):
     results.append(ads.get_info())
 
 df = pd.DataFrame(results)
-df.to_csv("results/sim4_less.csv", index=False)
+df.to_csv("results/sim_dipa.csv", index=False)

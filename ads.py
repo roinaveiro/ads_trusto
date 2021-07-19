@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import beta
 
 
 class ADS:
@@ -43,7 +44,7 @@ class ADS:
 
         # Trajectory planning and utilities
         self.v_auton  = {0:0, 1:2, 2:3} # Obstacle: velocity (AUTON mode)
-        self.v_manual = {0:0, 1:1, 2:4} # Obstacle: velocity (MANNUAL mode)
+        self.v_manual = {0:0, 1:1, 2:4} # Obstacle: velocity (MANUAL mode)
         self.u_d = {0:0.0, 1:0.1, 2:0.2, 3:0.3, 4:0.5}
 
         # Warnings
@@ -91,6 +92,11 @@ class ADS:
         self.crashes = 0
         self.skids = 0
 
+        # For DIPA
+        self.underperformance = 0
+        self.dipa_alpha = 20
+        self.dipa_beta  = 20
+
 
         ##
     def move(self):
@@ -129,6 +135,36 @@ class ADS:
 
             self.utilities[self.current_cell] = self.compute_cell_utility('MANUAL', 
                 self.decision_manual[self.current_cell])
+
+            ###########################################################################################
+            # For DIPA  ###############################################################################
+            ###########################################################################################
+            d = self.decision_manual_aware[self.current_cell]
+            exp_utility_aware = self.u_d[d] + (1 if self.road[self.current_cell] == 1 else 0) * -10 * \
+                (0.5 if d==2 else 0.8 if d==3 else 0.85 if d==4 else 0) + \
+                (1 if self.road[self.current_cell] == 0 else 0) * (-100 if d!=0 else 0)
+
+            d = self.decision_manual_dist[self.current_cell]
+            exp_utility_dist = self.u_d[d] + (1 if self.road[self.current_cell] == 1 else 0) * -10 * \
+                (0.5 if d==2 else 0.8 if d==3 else 0.85 if d==4 else 0) + \
+                (1 if self.road[self.current_cell] == 0 else 0) * (-100 if d!=0 else 0)
+
+            exp_utility = self.prob_driver_state[0]*exp_utility_aware + \
+                self.prob_driver_state[1]*exp_utility_dist
+
+            if self.utilities[self.current_cell] < exp_utility:
+                # Underperformance
+                self.underperformance += 1
+                self.dipa_alpha += 1
+
+            else:
+                self.dipa_beta += 1
+
+
+
+            ###########################################################################################
+            ###########################################################################################
+
 
             self.counter_manual += 1 
             if self.prob_driver_state[1] > 0.75 or self.counter_manual >= 10:
@@ -445,6 +481,8 @@ class ADS:
         info["crashes"] = self.crashes
         info["skids"] = self.skids
         info["utility"] = np.mean(self.utilities[:self.N-5])
+
+        info["prob_underp_above_th"] = 1 - beta.cdf(0.3, self.dipa_alpha, self.dipa_beta)
 
         return info
         
