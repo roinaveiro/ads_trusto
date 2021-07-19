@@ -199,10 +199,14 @@ class ADS:
         self.decision_manual_dist[self.current_cell] = traj_manual_dist[0]
 
         if self.driver[self.current_cell - 1] == 0:
-            self.decision_manual[self.current_cell] = \
-                self.decision_manual_aware[self.current_cell] * (1-self.driver[self.current_cell]) \
-                    + self.decision_manual_aware[self.current_cell-1] * self.driver[self.current_cell]
+
+            if self.driver[self.current_cell] == 0:
+                self.decision_manual[self.current_cell] = self.decision_manual_aware[self.current_cell]
+            else:
+                self.decision_manual[self.current_cell] = self.decision_manual_aware[self.current_cell-1] 
+
         else:
+            
             self.decision_manual[self.current_cell] = \
                 self.decision_manual_dist[self.current_cell -1]
 
